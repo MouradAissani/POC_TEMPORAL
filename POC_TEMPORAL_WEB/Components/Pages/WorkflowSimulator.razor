@@ -26,8 +26,16 @@
                 {
                     <div class="p-4 bg-gray-200 rounded">
                         <strong>@step.Name</strong>
-                        <p><em>Input:</em> @JsonSerializer.Serialize(step.Input)</p>
-                        <p><em>Output:</em> @JsonSerializer.Serialize(step.Output)</p>
+
+                        @if (step.Input != null)
+                        {
+                            <p><em>Input:</em> @JsonSerializer.Serialize(step.Input)</p>
+                        }
+
+                        @if (step.Output != null)
+                        {
+                            <p><em>Output:</em> @JsonSerializer.Serialize(step.Output)</p>
+                        }
                     </div>
                 }
             </div>
