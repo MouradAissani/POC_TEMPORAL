@@ -3,5 +3,5 @@
 public class DispatchResponse
 {
     public int StatusCode { get; set; }
-    public string Message { get; set; }
+    public string StatusMessage { get; set; }
 }
