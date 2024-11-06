@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "POC_TEMPORAL": {
+      "commandName": "Project"
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker"
+    }
+  }
+}

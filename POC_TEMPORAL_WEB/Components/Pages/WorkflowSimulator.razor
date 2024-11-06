@@ -1,0 +1,136 @@
+﻿@page "/workflow"
+
+@inject TemporalClient Client
+@inject IServiceProvider ServiceProvider
+@rendermode InteractiveServer
+
+<div class="min-h-screen bg-gray-100 flex items-center justify-center">
+    <div class="bg-white shadow-lg rounded-lg p-8 max-w-md w-full">
+        <h3 class="text-2xl font-semibold text-center text-blue-600 mb-4">WTC Workflow Simulator</h3>
+
+        <p class="text-gray-700 text-center mb-6">@statusMessage</p>
+
+        @if (!isRunning)
+        {
+            <div class="flex justify-center mb-6">
+                <button @onclick="StartWorkflow" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                    Start Workflow
+                </button>
+            </div>
+        }
+
+        @if (isRunning)
+        {
+            <div class="grid grid-cols-1 gap-4">
+                @foreach (var step in steps)
+                {
+                    <div class="p-4 bg-gray-200 rounded">
+                        <strong>@step.Name</strong>
+                        <p><em>Input:</em> @JsonSerializer.Serialize(step.Input)</p>
+                        <p><em>Output:</em> @JsonSerializer.Serialize(step.Output)</p>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private string? workflowId;
+    private bool isRunning;
+    private string statusMessage = "Click 'Start Workflow' to begin.";
+    private CancellationTokenSource? tokenSource;
+
+    private List<WorkflowStep> steps = new();
+
+    private async Task StartWorkflow()
+    {
+        tokenSource = new CancellationTokenSource();
+        workflowId = $"workflow-{Guid.NewGuid()}";
+        statusMessage = $"Starting workflow: {workflowId}...";
+        steps.Clear();
+
+        try
+        {
+            // Assign the UpdateProgress function to ReportProgress
+            WTCWorkflow.ReportProgress = UpdateProgress;
+
+            Console.WriteLine("Running worker...");
+
+            // Retrieve WTCActivities from existing ServiceProvider
+            var wtcActivities = ServiceProvider.GetRequiredService<IWTCActivities>();
+
+            var workerTask = Task.Run(async () =>
+            {
+                using var worker = new TemporalWorker(
+                    Client,
+                    new TemporalWorkerOptions("poc-task-queue")
+                        .AddAllActivities(wtcActivities)
+                        .AddWorkflow<WTCWorkflow>()
+                );
+
+                await worker.ExecuteAsync(tokenSource.Token);
+            });
+
+            // Start the workflow as a separate task
+            var workflowTask = Task.Run(async () =>
+            {
+                var handle = await Client.StartWorkflowAsync(
+                    (IWTCWorkflow wf) => wf.RunWTCWorkflowAsync(),
+                    new WorkflowOptions
+                        {
+                            Id = workflowId,
+                            TaskQueue = "poc-task-queue"
+                        });
+
+                Console.WriteLine("Workflow started with ID: " + handle.Id);
+                isRunning = true;
+
+                await handle.GetResultAsync();
+                Console.WriteLine("WTC Workflow completed.");
+                isRunning = false;
+                statusMessage = "Workflow completed!";
+            });
+
+            isRunning = true;
+            await Task.WhenAny(workerTask, workflowTask);
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error starting workflow: {ex.Message}";
+        }
+    }
+
+    private void UpdateProgress(string stepName, object? input, object? output)
+    {
+        var step = steps.FirstOrDefault(s => s.Name == stepName);
+        if (step == null)
+        {
+            step = new WorkflowStep(stepName);
+            steps.Add(step);
+        }
+
+        step.Input = input;
+        step.Output = output;
+
+        InvokeAsync(StateHasChanged); // Update the UI
+    }
+
+    public void Dispose()
+    {
+        tokenSource?.Cancel();
+        tokenSource?.Dispose();
+    }
+
+    private class WorkflowStep
+    {
+        public WorkflowStep(string name)
+        {
+            Name = name;
+        }
+
+        public string Name { get; }
+        public object? Input { get; set; }
+        public object? Output { get; set; }
+    }
+}
